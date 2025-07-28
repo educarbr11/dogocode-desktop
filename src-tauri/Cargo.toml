@@ -1,6 +1,6 @@
 [package]
 name = "dogocode-desktop"
-version = "1.0.7"
+version = "1.0.8"
 description = "dogomaker app"
 authors = ["dogomaker"]
 edition = "2021"
