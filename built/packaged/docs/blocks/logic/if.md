@@ -91,7 +91,7 @@ If the [light level](/reference/input/light-level) is `< 100`, this code sets th
 ```blocks
 input.onButtonPressed(Button.A, () => {
     if(input.lightLevel()<100){
-        led.setBrightness(255);
+        led.setBrightness(255);;
     }
 })
 ```

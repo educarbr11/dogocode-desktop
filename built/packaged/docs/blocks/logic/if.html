@@ -434,7 +434,7 @@ if (myScore == perfect) {
 <h2 id="examples"></h2><h2 id="example-adjusting-screen-brightness">Example: adjusting screen brightness</h2><p>If the <a  rel="nofollow noopener" href="/docs/reference/input/light-level.html">light level</a> is <code>&lt; 100</code>, this code sets the brightness to <code>255</code> when the button A is pressed:</p>
 <pre><code class="lang-blocks">input.onButtonPressed(Button.A, () =&gt; {
     if(input.lightLevel()&lt;100){
-        led.setBrightness(255);
+        led.setBrightness(255);;
     }
 })</code></pre>
 
