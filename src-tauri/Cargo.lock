@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "dogocode-desktop"
-version = "1.0.7"
+version = "1.0.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -810,6 +810,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-updater",
+ "tokio",
 ]
 
 [[package]]

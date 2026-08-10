@@ -22,14 +22,14 @@
             "github": {
                 "id": "github",
                 "name": "GitHub",
-                "icon": "docs/static/providers/github-mark.png",
+                "icon": "./static/providers/github-mark.png",
                 "identity": false,
                 "order": 3
             },
             "microsoft": {
                 "id": "microsoft",
                 "name": "Microsoft",
-                "icon": "docs/static/providers/microsoft-logo.svg",
+                "icon": "./static/providers/microsoft-logo.svg",
                 "identity": true,
                 "redirect": true,
                 "order": 1
@@ -37,7 +37,7 @@
             "google": {
                 "id": "google",
                 "name": "Google",
-                "icon": "docs/static/providers/google-logo.svg",
+                "icon": "./static/providers/google-logo.svg",
                 "identity": true,
                 "redirect": true,
                 "order": 2
@@ -45,7 +45,7 @@
             "clever": {
                 "id": "clever",
                 "name": "Clever",
-                "icon": "docs/static/providers/clever-logo.png",
+                "icon": "./static/providers/clever-logo.png",
                 "identity": true,
                 "redirect": true,
                 "order": 3

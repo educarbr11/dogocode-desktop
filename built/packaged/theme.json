@@ -11,12 +11,7 @@
     "organizationUrl": "https://makecode.com/",
     "organizationLogo": "docs/static/logo-dogomaker.png",
     "organizationWideLogo": "docs/static/logo-dogomaker.png",
-    "homeScreenHero": {
-        "imageUrl": "docs/static/bg-dogocode.jpg",
-        "name": "Flashing Heart",
-        "url": "",
-        "description": "Seja Bem-vindo ao DoGo Code!"
-    },
+    "homeScreenHero": "docs/static/banner-home.jpg",
     "instructions": false,
     "sidebarTutorial": false,
     "disableAPICache": true,
@@ -111,6 +106,7 @@
     "print": true,
     "selectLanguage": false,
     "disableLiveTranslations": true,
+    "defaultLocale": "pt-BR",
     "availableLocales": [
         "pt-BR",
         "pt-PT"

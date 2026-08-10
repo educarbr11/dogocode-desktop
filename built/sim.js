@@ -3417,7 +3417,6 @@ var pxsim;
             state.chunks = [];
         }
         async function record() {
-            var _a;
             let b = pxsim.board();
             init();
             const state = b.recordingState;
@@ -3425,7 +3424,7 @@ var pxsim;
                 state.recorder.stop();
                 clearTimeout(state.recordTimeoutID);
             }
-            if ((_a = navigator.mediaDevices) === null || _a === void 0 ? void 0 : _a.getUserMedia) {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 try {
                     state.stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
                     state.recorder = new MediaRecorder(state.stream, { audioBitsPerSecond: state.inputBitRate });

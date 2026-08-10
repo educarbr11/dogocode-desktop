@@ -3039,6 +3039,264 @@ exports.FlashProgram = FlashProgram;
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.googleAnalytics = void 0;
+const measurementId = "G-YPJ8TVLGCS";
+const duplicateWindowMs = 1000;
+const allowedParameters = {
+    page_view: ["page_location", "page_title"],
+    screen_view: ["screen_name"],
+    navigation: ["destination"],
+    project_action: ["action"],
+    editor_interaction: ["action", "editor"],
+    editor_mode_change: ["editor"],
+    block_interaction: ["action"],
+    simulator_action: ["action", "editor"],
+    code_compile: ["status", "editor", "duration_ms"],
+    code_deploy: ["status", "duration_ms"],
+    hardware_connection: ["action", "connection_type", "status"],
+    hardware_flash: ["status"],
+    bluetooth_action: ["action", "status"],
+    tutorial_action: ["action", "step"],
+    extension_action: ["action"],
+    share_action: ["action"],
+    select_promotion: ["promotion_id", "promotion_name"],
+};
+const allowedContextParameters = ["language", "target_version", "hardware_variant", "platform"];
+class GoogleAnalyticsProvider {
+    constructor() {
+        this.initialized = false;
+        this.lastEventTime = 0;
+    }
+    initialize() {
+        if (this.initialized || !this.isEnabledEnvironment())
+            return;
+        this.initialized = true;
+        const analyticsWindow = window;
+        analyticsWindow.dataLayer = analyticsWindow.dataLayer || [];
+        analyticsWindow.gtag = analyticsWindow.gtag || function () {
+            analyticsWindow.dataLayer.push(arguments);
+        };
+        analyticsWindow.gtag("consent", "default", {
+            analytics_storage: "denied",
+            ad_storage: "denied",
+            ad_user_data: "denied",
+            ad_personalization: "denied"
+        });
+        analyticsWindow.gtag("set", "ads_data_redaction", true);
+        analyticsWindow.gtag("js", new Date());
+        analyticsWindow.gtag("config", measurementId, {
+            send_page_view: false,
+            allow_google_signals: false,
+            allow_ad_personalization_signals: false
+        });
+        this.loadGoogleTag();
+        this.wrapPxtTelemetry();
+        this.track("page_view", {
+            page_location: `${window.location.origin}${window.location.pathname}`,
+            page_title: "DogoCode Editor"
+        });
+    }
+    isEnabledEnvironment() {
+        if (typeof window === "undefined" || window.location.protocol !== "https:")
+            return false;
+        if (!pxt.webConfig || !pxt.webConfig.isStatic)
+            return false;
+        if (pxt.BrowserUtils.isPxtElectron())
+            return false;
+        if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname))
+            return false;
+        try {
+            return window.self === window.top;
+        }
+        catch (e) {
+            return false;
+        }
+    }
+    track(name, parameters) {
+        if (!this.initialized || !allowedParameters[name])
+            return;
+        const sanitized = this.sanitizeParameters(name, parameters);
+        const eventKey = `${name}:${JSON.stringify(sanitized)}`;
+        const now = Date.now();
+        if (eventKey === this.lastEventKey && now - this.lastEventTime < duplicateWindowMs)
+            return;
+        this.lastEventKey = eventKey;
+        this.lastEventTime = now;
+        try {
+            window.gtag("event", name, sanitized);
+        }
+        catch (e) {
+            pxt.debug(`GA4 event ignored: ${name}`);
+        }
+    }
+    trackPxtEvent(id, data) {
+        if (id === "compile") {
+            this.compileStartTime = Date.now();
+            this.compileEditor = this.safeEditor(data && data["editor"]);
+        }
+        if (id === "deploy.start") {
+            this.trackCompileResult("completed");
+        }
+        else if (id === "compile.noemit") {
+            this.trackCompileResult("failed");
+        }
+        const event = this.mapPxtEvent(id, data);
+        if (event)
+            this.track(event.name, event.parameters);
+    }
+    trackCompileResult(status) {
+        if (!this.compileStartTime)
+            return;
+        this.track("code_compile", {
+            status,
+            editor: this.compileEditor,
+            duration_ms: Date.now() - this.compileStartTime
+        });
+        this.compileStartTime = undefined;
+        this.compileEditor = undefined;
+    }
+    loadGoogleTag() {
+        if (document.querySelector(`script[data-dogocode-ga4="${measurementId}"]`))
+            return;
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+        script.setAttribute("data-dogocode-ga4", measurementId);
+        script.onerror = () => pxt.debug("GA4 script was blocked or unavailable");
+        document.head.appendChild(script);
+    }
+    wrapPxtTelemetry() {
+        this.originalTickEvent = pxt.tickEvent;
+        const provider = this;
+        pxt.tickEvent = function (id, data, opts) {
+            if (provider.originalTickEvent)
+                provider.originalTickEvent(id, data, opts);
+            provider.trackPxtEvent(id, data);
+        };
+    }
+    sanitizeParameters(name, parameters) {
+        const result = this.safeContext();
+        const allowed = allowedParameters[name] || [];
+        if (parameters) {
+            allowed.forEach(key => {
+                const value = parameters[key];
+                if (typeof value === "number" && isFinite(value)) {
+                    result[key] = Math.max(0, Math.min(Math.round(value), 3600000));
+                }
+                else if (typeof value === "string") {
+                    result[key] = value.substring(0, 100);
+                }
+            });
+        }
+        return result;
+    }
+    safeContext() {
+        const result = { platform: "web" };
+        const language = pxt.Util.userLanguage();
+        const targetVersion = pxt.appTarget && pxt.appTarget.versions && pxt.appTarget.versions.target;
+        const hardwareVariant = pxt.hwVariant;
+        if (language && /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(language))
+            result.language = language.substring(0, 16);
+        if (targetVersion && /^[a-z0-9._-]+$/i.test(targetVersion))
+            result.target_version = targetVersion.substring(0, 40);
+        if (hardwareVariant && /^[a-z0-9._-]+$/i.test(hardwareVariant))
+            result.hardware_variant = hardwareVariant.substring(0, 40);
+        Object.keys(result).forEach(key => {
+            if (allowedContextParameters.indexOf(key) < 0)
+                delete result[key];
+        });
+        return result;
+    }
+    mapPxtEvent(id, data) {
+        const editor = this.safeEditor(data && data["editor"]);
+        switch (id) {
+            case "app.home": return this.event("screen_view", { screen_name: "home" });
+            case "app.editor": return this.event("screen_view", { screen_name: "editor" });
+            case "menu.home": return this.event("navigation", { destination: "home" });
+            case "app.newproject":
+            case "projects.new": return this.event("project_action", { action: "create" });
+            case "app.open.file": return this.event("project_action", { action: "open_file" });
+            case "import":
+            case "import.zip":
+            case "import.extension":
+            case "projects.import":
+            case "projects.importurl": return this.event("project_action", { action: "import" });
+            case "activity.edit": return this.event("editor_interaction", { action: "edit", editor });
+            case "sidebar.showBlocks":
+            case "blocks.showBlocks": return this.event("editor_mode_change", { editor: "blocks" });
+            case "sidebar.showPython":
+            case "blocks.showpython": return this.event("editor_mode_change", { editor: "python" });
+            case "sidebar.showTypescript":
+            case "blocks.showjavascript":
+            case "blocks.switchjavascript": return this.event("editor_mode_change", { editor: "javascript" });
+            case "blocks.create": return this.event("block_interaction", { action: "create" });
+            case "run": return this.event("simulator_action", { action: "run", editor });
+            case "debug":
+            case "simulator.debug": return this.event("simulator_action", { action: "debug", editor });
+            case "simulator.start": return this.event("simulator_action", { action: "start" });
+            case "simulator.stop": return this.event("simulator_action", { action: "stop" });
+            case "simulator.suspend": return this.event("simulator_action", { action: "suspend" });
+            case "compile": return this.event("code_compile", { status: "started", editor });
+            case "compile.noemit": return undefined;
+            case "deploy.start": return this.event("code_deploy", { status: "started" });
+            case "deploy.finished": return this.event("code_deploy", { status: "completed", duration_ms: this.safeNumber(data && data["elapsedMs"]) });
+            case "deploy.exception": return this.event("code_deploy", { status: "failed", duration_ms: this.safeNumber(data && data["elapsedMs"]) });
+            case "hid.flash.connect": return this.event("hardware_connection", { action: "connect", connection_type: "webusb", status: "completed" });
+            case "downloaddialog.button.webusb": return this.event("hardware_connection", { action: "select", connection_type: "webusb", status: "started" });
+            case "menu.pair.bluetooth": return this.event("bluetooth_action", { action: "open", status: "started" });
+            case "webble.connected": return this.event("bluetooth_action", { action: "connect", status: "completed" });
+            case "webble.fail.fail": return this.event("bluetooth_action", { action: "connect", status: "failed" });
+            case "hid.flash.start": return this.event("hardware_flash", { status: "started" });
+            case "hid.flash.success":
+            case "hid.flash.full.success":
+            case "hid.flash.quick.success": return this.event("hardware_flash", { status: "completed" });
+            case "hid.flash.error":
+            case "hid.flash.full.error":
+            case "hid.flash.quick.error": return this.event("hardware_flash", { status: "failed" });
+            case "tutorial.start": return this.event("tutorial_action", { action: "start" });
+            case "tutorial.next": return this.event("tutorial_action", { action: "next", step: this.safeNumber(data && data["step"]) });
+            case "tutorial.previous": return this.event("tutorial_action", { action: "previous", step: this.safeNumber(data && data["step"]) });
+            case "tutorial.finish":
+            case "tutorial.complete": return this.event("tutorial_action", { action: "complete" });
+            case "tutorial.exit":
+            case "tutorial.exit.home":
+            case "menu.exitTutorial": return this.event("tutorial_action", { action: "exit" });
+            case "blocks.extensions.open": return this.event("extension_action", { action: "open" });
+            case "extensions.import":
+            case "extensions.importfile": return this.event("extension_action", { action: "import" });
+            case "menu.share": return this.event("share_action", { action: "open" });
+            case "publish": return this.event("share_action", { action: "publish" });
+            default: return undefined;
+        }
+    }
+    event(name, parameters) {
+        if (parameters) {
+            Object.keys(parameters).forEach(key => {
+                if (parameters[key] === undefined)
+                    delete parameters[key];
+            });
+        }
+        return { name, parameters };
+    }
+    safeEditor(value) {
+        if (typeof value !== "string")
+            return undefined;
+        const normalized = value.toLowerCase().replace(/editor$/, "");
+        if (normalized === "blocks" || normalized === "python")
+            return normalized;
+        if (normalized === "javascript" || normalized === "typescript" || normalized === "js")
+            return "javascript";
+        return undefined;
+    }
+    safeNumber(value) {
+        return typeof value === "number" && isFinite(value) ? value : undefined;
+    }
+}
+exports.googleAnalytics = new GoogleAnalyticsProvider();
+
+},{}],2:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 exports.showProgramTooLargeErrorAsync = exports.cantImportAsync = void 0;
 function cantImportAsync(project) {
     // this feature is support in v0 only
@@ -3099,7 +3357,7 @@ async function showProgramTooLargeErrorAsync(variants, confirmAsync, saveOnly) {
 }
 exports.showProgramTooLargeErrorAsync = showProgramTooLargeErrorAsync;
 
-},{}],2:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 /// <reference path="../node_modules/pxt-core/localtypings/pxtarget.d.ts" />
@@ -3110,8 +3368,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const dialogs = require("./dialogs");
 const flash = require("./flash");
 const patch = require("./patch");
+const analytics_1 = require("./analytics");
+const homeHeroCarousel_1 = require("./homeHeroCarousel");
 pxt.editor.initExtensionsAsync = function (opts) {
     pxt.debug('loading microbit target extensions...');
+    homeHeroCarousel_1.homeHeroCarousel.initialize();
+    analytics_1.googleAnalytics.initialize();
     const manyAny = Math;
     if (!manyAny.imul)
         manyAny.imul = function (a, b) {
@@ -3143,7 +3405,7 @@ pxt.editor.initExtensionsAsync = function (opts) {
     return Promise.resolve(res);
 };
 
-},{"./dialogs":1,"./flash":3,"./patch":4}],3:[function(require,module,exports){
+},{"./analytics":1,"./dialogs":2,"./flash":4,"./homeHeroCarousel":5,"./patch":6}],4:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mkDAPLinkPacketIOWrapper = void 0;
@@ -3973,7 +4235,167 @@ function mkDAPLinkPacketIOWrapper(io) {
 }
 exports.mkDAPLinkPacketIOWrapper = mkDAPLinkPacketIOWrapper;
 
-},{}],4:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.homeHeroCarousel = void 0;
+const analytics_1 = require("./analytics");
+const heroSelector = ".projectsdialog .getting-started-segment.hero";
+const rotationDelayMs = 9000;
+const swipeThresholdPx = 40;
+const portalCourseUrl = "https://app.portaldogomaker.com.br/curso/177f1593-9a9e-4268-9771-1497139958be";
+class HomeHeroCarousel {
+    constructor() {
+        this.activeIndex = 0;
+        this.suppressClickUntil = 0;
+        this.handleVisibilityChange = () => {
+            if (document.hidden)
+                this.clearTimer();
+            else
+                this.scheduleNext();
+        };
+        this.handleHeroClick = (event) => {
+            if (Date.now() < this.suppressClickUntil || event.target.closest(".dogocode-hero-dots"))
+                return;
+            const slide = this.slides[this.activeIndex];
+            if (!slide.url)
+                return;
+            analytics_1.googleAnalytics.track("select_promotion", {
+                promotion_id: "portal_dogomaker_course",
+                promotion_name: "Portal DogoMaker course"
+            });
+            window.location.assign(slide.url);
+        };
+        this.handleKeyDown = (event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+                return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.show(this.activeIndex + (event.key === "ArrowLeft" ? -1 : 1), true);
+        };
+        this.handlePointerDown = (event) => {
+            this.pointerStartX = event.clientX;
+        };
+        this.handlePointerUp = (event) => {
+            if (this.pointerStartX === undefined)
+                return;
+            const distance = event.clientX - this.pointerStartX;
+            this.pointerStartX = undefined;
+            if (Math.abs(distance) < swipeThresholdPx)
+                return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.suppressClickUntil = Date.now() + 500;
+            this.show(this.activeIndex + (distance < 0 ? 1 : -1), true);
+        };
+        this.handlePointerCancel = () => {
+            this.pointerStartX = undefined;
+        };
+    }
+    initialize() {
+        if (this.observer)
+            return;
+        this.slides = [
+            { imageUrl: this.assetUrl("banner-home.jpg"), label: "Banner DogoCode" },
+            { imageUrl: this.assetUrl("banner-home_2.jpg"), label: "Curso Portal DogoMaker", url: portalCourseUrl }
+        ];
+        this.slides.forEach(slide => {
+            const image = new Image();
+            image.src = slide.imageUrl;
+        });
+        this.observer = new MutationObserver(() => this.mount());
+        this.observer.observe(document.body, { childList: true, subtree: true });
+        document.addEventListener("visibilitychange", this.handleVisibilityChange);
+        this.mount();
+    }
+    assetUrl(filename) {
+        return pxt.webConfig && pxt.webConfig.isStatic
+            ? `${pxt.webConfig.relprefix}docs/static/${filename}`
+            : `/static/${filename}`;
+    }
+    mount() {
+        const nextHero = document.querySelector(heroSelector);
+        if (!nextHero) {
+            this.unmount();
+            return;
+        }
+        if (nextHero === this.hero && this.controls && this.controls.parentElement === nextHero)
+            return;
+        this.unmount();
+        this.hero = nextHero;
+        this.hero.classList.add("dogocode-hero-carousel");
+        this.hero.tabIndex = 0;
+        this.hero.setAttribute("role", "region");
+        this.hero.setAttribute("aria-label", "Destaques DogoCode");
+        this.hero.addEventListener("click", this.handleHeroClick);
+        this.hero.addEventListener("keydown", this.handleKeyDown);
+        this.hero.addEventListener("pointerdown", this.handlePointerDown);
+        this.hero.addEventListener("pointerup", this.handlePointerUp);
+        this.hero.addEventListener("pointercancel", this.handlePointerCancel);
+        this.controls = document.createElement("div");
+        this.controls.className = "dogocode-hero-dots";
+        this.controls.setAttribute("role", "group");
+        this.controls.setAttribute("aria-label", "Selecionar banner");
+        this.slides.forEach((slide, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "dogocode-hero-dot";
+            button.setAttribute("aria-label", `Exibir ${slide.label}`);
+            button.addEventListener("click", event => {
+                event.stopPropagation();
+                this.show(index, true);
+            });
+            this.controls.appendChild(button);
+        });
+        this.hero.appendChild(this.controls);
+        this.show(this.activeIndex, false);
+    }
+    unmount() {
+        this.clearTimer();
+        if (!this.hero)
+            return;
+        this.hero.removeEventListener("click", this.handleHeroClick);
+        this.hero.removeEventListener("keydown", this.handleKeyDown);
+        this.hero.removeEventListener("pointerdown", this.handlePointerDown);
+        this.hero.removeEventListener("pointerup", this.handlePointerUp);
+        this.hero.removeEventListener("pointercancel", this.handlePointerCancel);
+        this.hero = undefined;
+        this.controls = undefined;
+    }
+    show(index, restartTimer) {
+        if (!this.hero)
+            return;
+        this.activeIndex = (index + this.slides.length) % this.slides.length;
+        const slide = this.slides[this.activeIndex];
+        this.hero.style.backgroundImage = `url("${slide.imageUrl}")`;
+        this.hero.setAttribute("data-dogocode-hero-index", `${this.activeIndex}`);
+        this.hero.setAttribute("aria-label", `Destaques DogoCode: ${slide.label}`);
+        const buttons = this.controls && this.controls.querySelectorAll("button");
+        if (buttons) {
+            Array.prototype.forEach.call(buttons, (button, buttonIndex) => {
+                const active = buttonIndex === this.activeIndex;
+                button.classList.toggle("active", active);
+                button.setAttribute("aria-pressed", active ? "true" : "false");
+            });
+        }
+        if (restartTimer || !this.timer)
+            this.scheduleNext();
+    }
+    scheduleNext() {
+        this.clearTimer();
+        if (!document.hidden && this.hero) {
+            this.timer = window.setTimeout(() => this.show(this.activeIndex + 1, true), rotationDelayMs);
+        }
+    }
+    clearTimer() {
+        if (this.timer)
+            window.clearTimeout(this.timer);
+        this.timer = undefined;
+    }
+}
+exports.homeHeroCarousel = new HomeHeroCarousel();
+
+},{"./analytics":1}],6:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.patchBlocks = void 0;
@@ -4359,4 +4781,4 @@ function addNumberShadow(valueNode) {
     valueNode.appendChild(s);
 }
 
-},{}]},{},[1,2,3,4]);
+},{}]},{},[1,2,3,4,5,6]);

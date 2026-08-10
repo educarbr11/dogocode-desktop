@@ -8,8 +8,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const dialogs = require("./dialogs");
 const flash = require("./flash");
 const patch = require("./patch");
+const analytics_1 = require("./analytics");
+const homeHeroCarousel_1 = require("./homeHeroCarousel");
 pxt.editor.initExtensionsAsync = function (opts) {
     pxt.debug('loading microbit target extensions...');
+    homeHeroCarousel_1.homeHeroCarousel.initialize();
+    analytics_1.googleAnalytics.initialize();
     const manyAny = Math;
     if (!manyAny.imul)
         manyAny.imul = function (a, b) {
