@@ -141,3 +141,59 @@ git push origin release
 - App abre sem frontend: confirmar se `built/packaged` existe no projeto.
 - Updater não encontra atualização: validar se `latest.json` foi publicado na release mais recente.
 - Build CI falha por assinatura: revisar `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_KEY_PASSWORD`.
+
+## Publicação na Microsoft Store como MSIX
+
+O workflow `.github/workflows/store-msix.yml` gera um pacote separado para a
+Microsoft Store. Esse pacote não usa o certificado Authenticode rejeitado: a
+Store aplica sua assinatura pública depois da certificação.
+
+Crie o GitHub Environment `microsoft-store` e adicione estas **Variables** com
+os valores exatos da página **Product identity** no Partner Center:
+
+- `MSIX_IDENTITY_NAME`: valor de Package/Identity/Name;
+- `MSIX_PUBLISHER`: valor completo de Package/Identity/Publisher;
+- `MSIX_PUBLISHER_DISPLAY_NAME`: nome de exibição do publicador.
+
+Execute `Build Microsoft Store MSIX` manualmente em Actions ou publique uma
+tag no formato:
+
+```bash
+git tag store-v1.0.9
+git push origin store-v1.0.9
+```
+
+Baixe o artefato `dogocode-microsoft-store-msix` e envie o `.msix` como um
+produto **MSIX packaged app**, não como EXE/MSI. O build Store desabilita o
+updater próprio do Tauri por meio de `DOGOCODE_STORE_BUILD=1`.
+
+### Build local no Windows
+
+Instale Node.js, Rust e o Windows 10/11 SDK. Em seguida:
+
+```powershell
+$env:DOGOCODE_STORE_BUILD = "1"
+npm install
+npm run tauri build -- --no-bundle
+./scripts/build-msix.ps1 `
+  -IdentityName "IDENTITY_NAME_DO_PARTNER_CENTER" `
+  -Publisher "PUBLISHER_EXATO_DO_PARTNER_CENTER" `
+  -PublisherDisplayName "NOME_DO_PUBLICADOR"
+```
+
+O resultado será criado em `dist/msix/`.
+
+### Linux e MSIX Packaging Tool
+
+O MSIX Packaging Tool e o Windows SDK não funcionam nativamente no Linux. Use
+o workflow `windows-latest` ou uma VM Windows; Wine não é um fluxo suportado
+para certificação da Store.
+
+Dentro do Windows, a ferramenta interativa pode ser instalada com:
+
+```powershell
+winget install "MSIX Packaging Tool"
+```
+
+O pipeline deste repositório não depende da captura interativa: ele usa o
+`MakeAppx.exe` do Windows SDK para gerar um pacote reproduzível.

@@ -1,0 +1,70 @@
+name: Build Microsoft Store MSIX
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "store-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-msix:
+    runs-on: windows-latest
+    environment: microsoft-store
+    env:
+      DOGOCODE_STORE_BUILD: "1"
+      MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+      MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+      MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Partner Center identity
+        shell: pwsh
+        run: |
+          $required = @(
+            "MSIX_IDENTITY_NAME",
+            "MSIX_PUBLISHER",
+            "MSIX_PUBLISHER_DISPLAY_NAME"
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "GitHub Environment variable '$name' is required."
+            }
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Tauri executable for Store
+        run: npm run tauri build -- --no-bundle
+
+      - name: Build and validate MSIX
+        shell: pwsh
+        run: |
+          ./scripts/build-msix.ps1 `
+            -IdentityName $env:MSIX_IDENTITY_NAME `
+            -Publisher $env:MSIX_PUBLISHER `
+            -PublisherDisplayName $env:MSIX_PUBLISHER_DISPLAY_NAME
+
+      - name: Upload unsigned Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dogocode-microsoft-store-msix
+          path: |
+            dist/msix/*.msix
+            dist/msix/*.sha256
+          if-no-files-found: error
+          retention-days: 30
